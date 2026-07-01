@@ -4,6 +4,7 @@ from database.database import SessionLocal
 from database.models import User, Service, Provider, Appointment
 from datetime import datetime, timedelta
 import os
+from bot.ai_assistant import process_user_message
 
 # Получаем ID админов и ссылку на Mini App из .env
 ADMIN_IDS = [int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",") if id.strip()]
@@ -248,6 +249,21 @@ async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Запись отменена 🚫", reply_markup=get_main_keyboard(user_id))
     return ConversationHandler.END
 
+async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Игнорируем сообщения, которые обрабатываются ConversationHandler (если мы в состоянии)
+    # но поскольку этот обработчик будет вне ConversationHandler, он поймает обычный текст
+    user_id = update.message.from_user.id
+    text = update.message.text
+    
+    # Отправляем индикатор набора текста
+    await context.bot.send_chat_action(chat_id=user_id, action="typing")
+    
+    # Получаем ответ от ИИ
+    reply_text = await process_user_message(user_id, text)
+    
+    # Отправляем ответ пользователю
+    await update.message.reply_text(reply_text, reply_markup=get_main_keyboard(user_id))
+
 # ----------------- СБОРКА ОБРАБОТЧИКОВ -----------------
 
 def get_conversation_handler():
@@ -269,5 +285,7 @@ def get_main_handlers():
         CommandHandler("start", start),
         MessageHandler(filters.Regex("^📝 Мои записи$"), my_appointments),
         MessageHandler(filters.Regex("^ℹ️ О нас$"), about_us),
-        get_conversation_handler()
+        get_conversation_handler(),
+        # Обработчик для всех остальных текстовых сообщений (передается ИИ)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message)
     ]
