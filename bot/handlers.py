@@ -19,12 +19,15 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "https://test.up.railway.app")
     CONFIRM_APPOINTMENT
 ) = range(5)
 
+AI_CHAT = 10
+
+
 # ----------------- ОСНОВНОЕ МЕНЮ (Reply) -----------------
 
 def get_main_keyboard(user_id: int):
     keyboard = [
         [KeyboardButton("📅 Записаться"), KeyboardButton("📝 Мои записи")],
-        [KeyboardButton("ℹ️ О нас")]
+        [KeyboardButton("🤖 ИИ-помощник"), KeyboardButton("ℹ️ О нас")]
     ]
     if user_id in ADMIN_IDS:
         keyboard.append([KeyboardButton("⚙️ Админ-панель", web_app=WebAppInfo(url=WEBAPP_URL))])
@@ -249,9 +252,15 @@ async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Запись отменена 🚫", reply_markup=get_main_keyboard(user_id))
     return ConversationHandler.END
 
-async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Игнорируем сообщения, которые обрабатываются ConversationHandler (если мы в состоянии)
-    # но поскольку этот обработчик будет вне ConversationHandler, он поймает обычный текст
+def get_ai_keyboard():
+    return ReplyKeyboardMarkup([[KeyboardButton("❌ Выйти из чата с ИИ")]], resize_keyboard=True)
+
+async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = "🤖 Привет! Я умный помощник.\n\nВы можете спросить меня об услугах, мастерах, или попросить записать вас на прием.\nНапишите ваш вопрос (или нажмите 'Выйти', чтобы вернуться в меню):"
+    await update.message.reply_text(text, reply_markup=get_ai_keyboard())
+    return AI_CHAT
+
+async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.message.from_user.id
     text = update.message.text
     
@@ -262,7 +271,13 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     reply_text = await process_user_message(user_id, text)
     
     # Отправляем ответ пользователю
-    await update.message.reply_text(reply_text, reply_markup=get_main_keyboard(user_id))
+    await update.message.reply_text(reply_text, reply_markup=get_ai_keyboard())
+    return AI_CHAT
+
+async def stop_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Вы вышли из режима ИИ-помощника.", reply_markup=get_main_keyboard(update.message.from_user.id))
+    return ConversationHandler.END
+
 
 # ----------------- СБОРКА ОБРАБОТЧИКОВ -----------------
 
@@ -280,12 +295,20 @@ def get_conversation_handler():
         fallbacks=[CommandHandler("cancel", cancel_booking)]
     )
 
+def get_ai_conversation_handler():
+    return ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🤖 ИИ-помощник$"), start_ai_chat)],
+        states={
+            AI_CHAT: [MessageHandler(filters.TEXT & ~filters.Regex("^❌ Выйти из чата с ИИ$"), handle_ai_message)]
+        },
+        fallbacks=[MessageHandler(filters.Regex("^❌ Выйти из чата с ИИ$"), stop_ai_chat)]
+    )
+
 def get_main_handlers():
     return [
         CommandHandler("start", start),
         MessageHandler(filters.Regex("^📝 Мои записи$"), my_appointments),
         MessageHandler(filters.Regex("^ℹ️ О нас$"), about_us),
         get_conversation_handler(),
-        # Обработчик для всех остальных текстовых сообщений (передается ИИ)
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message)
+        get_ai_conversation_handler()
     ]

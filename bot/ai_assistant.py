@@ -148,6 +148,11 @@ user_contexts = {}
 async def process_user_message(user_id: int, text: str) -> str:
     """Отправляет сообщение пользователя в ИИ и возвращает ответ."""
     
+    # Быстрая проверка на отсутствие ключа
+    api_key = os.getenv("OPENROUTER_API_KEY", "NOT_SET")
+    if api_key in ["NOT_SET", "твой_ключ_здесь", ""]:
+        return "🤖 Функция ИИ пока недоступна, так как администратор еще не настроил API ключ. Пожалуйста, воспользуйтесь стандартным меню (нажмите 'Выйти')."
+        
     # Инициализируем контекст если его нет
     if user_id not in user_contexts:
         user_contexts[user_id] = [
